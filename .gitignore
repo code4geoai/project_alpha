@@ -1,4 +1,8 @@
-data/*.*
+data/images/*.*
+data/models/*.*
+data/masks/*.*
+data/vectors/*.*
 models/*.*
+src/__pycache__/*.pyc
 
 
