@@ -2,6 +2,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
+import geopandas as gpd
 import xarray as xr
 import rasterio
 import numpy as np
@@ -27,5 +28,21 @@ def build_rgb_from_nc(ds, t=0):
 def load_mask(path):
     with rasterio.open(path) as src:
         mask = src.read(1)
+        #print(src.crs)
     return mask
+
+
+
+def load_parcels(big_gdf, image_id, country="Netherlands"):
+    """
+    Filter parcels from the big GPKG file based on:
+    - country name
+    - id == image_id (numeric portion of file name)
+    """
+    subset = big_gdf[
+        (big_gdf["coutry"] == country) &
+        (big_gdf["id"] == image_id)
+    ]
+
+    return subset
 

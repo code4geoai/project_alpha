@@ -4,5 +4,11 @@ data/masks/*.*
 data/vectors/*.*
 models/*.*
 src/__pycache__/*.pyc
-
-
+data/results/*.png
+notebooks/results/prompts/*.*
+*.json
+*.__pycache__/*.pyc
+*.ipynb_checkpoints/*.ipynb
+*.ipynb_checkpoints/*.pyc
+*.ipynb_checkpoints/*.py
+*.ipynb_checkpoints/*.json
