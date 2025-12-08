@@ -12,3 +12,6 @@ notebooks/results/prompts/*.*
 *.ipynb_checkpoints/*.pyc
 *.ipynb_checkpoints/*.py
 *.ipynb_checkpoints/*.json
+*.png
+*.npy
+*.csv

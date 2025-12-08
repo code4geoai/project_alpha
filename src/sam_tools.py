@@ -27,3 +27,6 @@ def calculate_iou(pred_mask, gt_mask):
     intersection = np.logical_and(pred_mask, gt_mask > 0).sum()
     union = np.logical_or(pred_mask, gt_mask > 0).sum()
     return intersection / union if union > 0 else 0
+
+def binarize_mask(mask):
+    return (mask > 0.5).astype(np.uint8)
