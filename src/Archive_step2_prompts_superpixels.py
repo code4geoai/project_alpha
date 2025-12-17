@@ -4,7 +4,6 @@ import os
 # Add project root to Python path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-
 import numpy as np
 from skimage.segmentation import slic
 from skimage.measure import regionprops
@@ -15,27 +14,42 @@ from src.config import PROMPTS_DIR
 os.makedirs(PROMPTS_DIR, exist_ok=True)
 
 
-def generate_superpixel_prompts(ndvi_var, ndvi_mask, image_id, n_segments=150):
+def generate_superpixel_prompts(
+        ndvi_var,
+        ndvi_mask,
+        image_id,
+        n_segments=150,
+        min_region_size=20
+):
     """
-    Generate NDVI-guided superpixel centroids.
-    Only pixels where ndvi_mask == 1 are used.
+    NDVI-variance-guided superpixel prompt generation.
     """
 
     # -------------------------
-    # 1. Mask-out low-variance pixels
+    # 1. Restrict analysis only to active NDVI variance areas
     # -------------------------
     masked_ndvi = np.zeros_like(ndvi_var)
     masked_ndvi[ndvi_mask == 1] = ndvi_var[ndvi_mask == 1]
 
     if masked_ndvi.sum() == 0:
-        print(f"[WARN] Image {image_id}: No active NDVI variance pixels!")
-        return []
+        print(f"[WARN] Image {image_id}: No active NDVI variance pixels → Skipping.")
+        return np.array([])
 
     # -------------------------
-    # 2. Run SLIC only on nonzero NDVI variance areas
+    # 2. Safe normalization
     # -------------------------
-    ndvi_norm = (masked_ndvi - masked_ndvi.min()) / (masked_ndvi.max() - masked_ndvi.min() + 1e-6)
+    vmin = masked_ndvi.min()
+    vmax = masked_ndvi.max()
 
+    if vmax - vmin < 1e-6:
+        print(f"[WARN] Image {image_id}: NDVI variance too flat → Skipping.")
+        return np.array([])
+
+    ndvi_norm = (masked_ndvi - vmin) / (vmax - vmin)
+
+    # -------------------------
+    # 3. SLIC Superpixels *restricted by mask*
+    # -------------------------
     segments = slic(
         ndvi_norm,
         n_segments=n_segments,
@@ -45,33 +59,39 @@ def generate_superpixel_prompts(ndvi_var, ndvi_mask, image_id, n_segments=150):
         channel_axis=None
     )
 
+    # Clean small objects (noise superpixels after masking)
+    segments = remove_small_objects(segments, min_region_size)
+
     # -------------------------
-    # 3. Extract centroids from superpixels
+    # 4. Extract centroids
     # -------------------------
     props = regionprops(segments)
 
+    if len(props) < 3:
+        print(f"[WARN] Image {image_id}: Too few superpixels → {len(props)}")
+    
     centroids = []
     for p in props:
         r, c = p.centroid
-        centroids.append((float(c), float(r)))   # (x, y)
+        centroids.append((float(c), float(r)))   # x, y (col, row)
 
     centroids = np.array(centroids)
 
     # -------------------------
-    # 4. Save prompts
+    # 5. Save
     # -------------------------
     out_path = os.path.join(PROMPTS_DIR, f"superpixel_prompts_{image_id}.npy")
     np.save(out_path, centroids)
 
-    print(f"[2D.A] Image {image_id}: {len(centroids)} superpixel prompts saved → {out_path}")
+    print(f"[2D] Image {image_id}: {len(centroids)} superpixel prompts saved → {out_path}")
 
     return centroids
 
 
 def run_superpixel_generation(dataset):
     """
-    dataset = output of Step 2A (NDVI temporal features)
-    For each image, run NDVI-guided superpixel prompt extraction.
+    dataset = output of Step 2A (with ndvi_var)
+    PLUS Step 2B (with ndvi_mask)
     """
 
     results = {}
@@ -80,13 +100,13 @@ def run_superpixel_generation(dataset):
         img_id = item["id"]
 
         ndvi_var = item["ndvi_var"]
-        mask = item["ndvi_mask"]     # this must come from Step 2B
+        ndvi_mask = item["ndvi_mask"]
 
-        print(f"\n[2D.A] Processing image {img_id}")
+        print(f"\n[2D] Generating superpixel prompts for image {img_id}...")
 
         centroids = generate_superpixel_prompts(
             ndvi_var=ndvi_var,
-            ndvi_mask=mask,
+            ndvi_mask=ndvi_mask,
             image_id=img_id
         )
 
@@ -94,5 +114,7 @@ def run_superpixel_generation(dataset):
             "centroids": centroids,
             "n_centroids": len(centroids)
         }
+
+    print("\n[2D] Superpixel prompt generation complete for all images.")
 
     return results
