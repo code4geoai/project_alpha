@@ -26,10 +26,10 @@ def rank_temporal_prompts(
 ):
     """
     labels   : [H,W] superpixel labels
-    centroids: list[(x,y)]
+    centroids: list[(x,y)] of centroids to rank (assumed filtered)
     saliency : [H,W] temporal saliency map
 
-    Returns: ranked_centroids (top_k)
+    Returns: ranked_centroids (top_k from centroids)
     """
 
     props = regionprops(labels, intensity_image=saliency)
@@ -38,7 +38,14 @@ def rank_temporal_prompts(
     for r in props:
         score = r.mean_intensity
         y, x = r.centroid
-        scores.append((score, float(x), float(y)))
+        centroid = (float(x), float(y))
+
+        # Check if this centroid is in centroids (with tolerance)
+        is_in = any(
+            np.allclose(centroid, c, atol=1e-2) for c in centroids
+        )
+        if is_in:
+            scores.append((score, float(x), float(y)))
 
     # Sort descending by saliency strength
     scores.sort(key=lambda x: x[0], reverse=True)
