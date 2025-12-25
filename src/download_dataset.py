@@ -18,7 +18,7 @@ print("Total records in CSV:", len(df))
 filtered_df = (
     df[df["file_id"].str.startswith("NL")]
     .sort_values(by="file_id", ascending=True)
-    .head(50)          # 🔴 change this later (100)
+    .head(100)          # 🔴 change this later (100)
     .copy()
 )
 

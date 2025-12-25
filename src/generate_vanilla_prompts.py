@@ -66,6 +66,7 @@ def generate_vanilla_centroid_prompts(dataset=None, country="Netherlands"):
         ds = xr.open_dataset(nc_path)
         x_vals = ds["x"].values
         y_vals = ds["y"].values
+        ds.close()  # Close to free memory
 
         centroids = []
         for idx, parcel in parcels.iterrows():

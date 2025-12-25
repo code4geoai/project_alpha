@@ -98,8 +98,14 @@ def load_all_data():
         # append structured dataset
         dataset.append({
             "id": image_id,
-            "ndvi": ndvi,
             "rgb": rgb,
+            "ndvi_ts": ndvi[np.newaxis, ...],  # Make it 3D for consistency
+            "ndvi_mean": ndvi,
+            "ndvi_var": np.zeros_like(ndvi),  # Add variance field
+            "ndvi_max": ndvi,
+            "ndvi_min": ndvi,
+            "n_timesteps": 1,
+            "ndvi_mask": (ndvi > 0.2).astype(np.uint8),  # Add NDVI mask
             "mask": mask,
             "parcels": parcels,
             "nc_path": nc_path,

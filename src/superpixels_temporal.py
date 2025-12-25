@@ -169,6 +169,57 @@ def filter_centroids_within_parcels(centroids, parcels, x_vals, y_vals):
 
 
 # -------------------------------------------------------
+# SELECT TOP SALIENCY PIXELS PER PARCEL
+# -------------------------------------------------------
+def select_top_saliency_pixels_per_parcel(parcels, saliency, x_vals, y_vals, top_k=5):
+    """
+    parcels: GeoDataFrame of parcels
+    saliency: [H, W] saliency map
+    x_vals, y_vals: 1D arrays from NetCDF
+    top_k: number of top pixels per parcel
+
+    Returns: list of (x_pixel, y_pixel) top saliency pixels across all parcels
+    """
+    H, W = saliency.shape
+    all_prompts = []
+
+    for _, parcel in parcels.iterrows():
+        geom = parcel.geometry
+        if geom is None or geom.is_empty:
+            continue
+
+        # Find pixels inside the parcel
+        min_x, min_y, max_x, max_y = geom.bounds
+        # Approximate pixel range
+        x_min_idx = np.searchsorted(x_vals, min_x) - 1
+        x_max_idx = np.searchsorted(x_vals, max_x) + 1
+        y_min_idx = np.searchsorted(y_vals, min_y) - 1
+        y_max_idx = np.searchsorted(y_vals, max_y) + 1
+
+        x_min_idx = max(0, x_min_idx)
+        x_max_idx = min(W, x_max_idx)
+        y_min_idx = max(0, y_min_idx)
+        y_max_idx = min(H, y_max_idx)
+
+        parcel_pixels = []
+        for i in range(y_min_idx, y_max_idx):
+            for j in range(x_min_idx, x_max_idx):
+                # Check if pixel is inside parcel
+                x_map = x_vals[j]
+                y_map = y_vals[i]
+                point = Point(x_map, y_map)
+                if geom.contains(point):
+                    parcel_pixels.append((saliency[i, j], j, i))  # (saliency, x, y)
+
+        # Sort by saliency descending, take top_k
+        parcel_pixels.sort(key=lambda x: x[0], reverse=True)
+        top_pixels = parcel_pixels[:top_k]
+        all_prompts.extend([(x, y) for _, x, y in top_pixels])
+
+    return all_prompts
+
+
+# -------------------------------------------------------
 # SAVE CENTROIDS
 # -------------------------------------------------------
 def save_temporal_centroids(image_id, centroids):
@@ -217,17 +268,15 @@ def run_temporal_superpixels(dataset, country="Netherlands"):
         ds = xr.open_dataset(nc_path)
         x_vals = ds["x"].values
         y_vals = ds["y"].values
+        ds.close()  # Close to free memory
 
-        # Generate superpixels
-        labels, centroids, saliency = generate_temporal_superpixels(
-            rgb=item["rgb"],
-            ndvi_ts=item["ndvi_ts"]
-        )
+        # Compute saliency
+        saliency = build_temporal_saliency_mask(item["ndvi_ts"])
 
-        # Filter centroids within parcels
-        filtered_centroids = filter_centroids_within_parcels(centroids, parcels, x_vals, y_vals)
+        # Select top saliency pixels per parcel
+        prompts = select_top_saliency_pixels_per_parcel(parcels, saliency, x_vals, y_vals, top_k=5)
 
-        print(f"Image {image_id}: {len(centroids)} → {len(filtered_centroids)} centroids after parcel filtering")
+        print(f"Image {image_id}: {len(parcels)} parcels → {len(prompts)} prompts (top 5 per parcel)")
 
-        # Save filtered centroids
-        save_temporal_centroids(image_id, filtered_centroids)
+        # Save prompts
+        save_temporal_centroids(image_id, prompts)

@@ -15,7 +15,7 @@ from src.metrics import compute_iou, compute_dice, compute_boundary_f1
 from src.config import (
     SAM_MODEL_TYPE,
     SAM_CHECKPOINT,
-    RANKED_PROMPTS_DIR,
+    TEMPORAL_PROMPTS_DIR,
     VANILLA_PROMPTS_DIR,
 )
 
@@ -70,12 +70,12 @@ def evaluate(
         if mode == "vanilla":
             prompt_path = os.path.join(
                 VANILLA_PROMPTS_DIR,
-                f"vanilla_prompt_{image_id}.npy"
+                f"vanilla_prompts_{image_id}.npy"
             )
         else:
             prompt_path = os.path.join(
-                RANKED_PROMPTS_DIR,
-                f"ranked_prompts_{image_id}.npy"
+                TEMPORAL_PROMPTS_DIR,
+                f"superpixel_prompts_{image_id}.npy"
             )
 
         if not os.path.exists(prompt_path):

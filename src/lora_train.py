@@ -28,16 +28,23 @@ def compute_iou(pred, gt, eps=1e-6):
 # -------------------------
 def train_lora(
     dataset,
-    ranked_prompt_dir,
+    temporal_prompt_dir,
     epochs=20,
     lr=1e-4,
     device="cuda",
     max_points=32,
-    ckpt_path="checkpoints/lora_mask_decoder.pt"
+    ckpt_path="checkpoints/lora_mask_decoder.pt",
+    save_final=True,
+    checkpoint_interval=5,
+    resume_ckpt=None
 ):
     """
     Train LoRA adapters on SAM mask decoder only.
     Training-set metrics only (no validation).
+
+    save_final: Save model at training completion.
+    checkpoint_interval: Save checkpoint every N epochs.
+    resume_ckpt: Path to checkpoint to resume from.
     """
 
     os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
@@ -52,7 +59,20 @@ def train_lora(
     print("[DEBUG] SAM device:", next(sam.parameters()).device)
     print("[DEBUG] Trainable LoRA params:", sum(p.numel() for p in lora_params))
 
+    # --------------------------------------------------
+    # Resume from checkpoint if provided
+    # --------------------------------------------------
+    start_epoch = 0
     best_iou = -1.0
+    if resume_ckpt and os.path.exists(resume_ckpt):
+        checkpoint = torch.load(resume_ckpt, map_location=device)
+        sam.load_state_dict(checkpoint['model_state'], strict=False)
+        optimizer.load_state_dict(checkpoint['optimizer_state'])
+        start_epoch = checkpoint['epoch'] + 1
+        best_iou = checkpoint.get('best_iou', -1.0)
+        print(f"✅ Resumed from epoch {start_epoch}, best IoU {best_iou:.4f}")
+    else:
+        print("Starting training from scratch")
 
     sam.train()
     sam.mask_decoder.train()
@@ -60,7 +80,7 @@ def train_lora(
     # --------------------------------------------------
     # Training loop
     # --------------------------------------------------
-    for epoch in range(epochs):
+    for epoch in range(start_epoch, epochs):
         print(f"\n[LoRA] Epoch {epoch+1}/{epochs}")
 
         epoch_loss = 0.0
@@ -80,13 +100,21 @@ def train_lora(
             _, rgb = load_nc_image(item["nc_path"])
             predictor.set_image((rgb * 255).astype(np.uint8))
 
-            # ---- Load ranked prompts ----
+            # ---- Load filtered prompts ----
             points_np = np.load(
-                os.path.join(ranked_prompt_dir, f"ranked_prompts_{image_id}.npy")
+                os.path.join(temporal_prompt_dir, f"superpixel_prompts_{image_id}.npy")
             )[:max_points]
 
             points = torch.tensor(points_np, device=device, dtype=torch.float32)
             labels = torch.ones(len(points), device=device)
+
+            # Pad to max_points if necessary
+            n = len(points)
+            if n < max_points:
+                padding_points = torch.zeros(max_points - n, 2, device=device)
+                padding_labels = torch.zeros(max_points - n, device=device)
+                points = torch.cat([points, padding_points], dim=0)
+                labels = torch.cat([labels, padding_labels], dim=0)
 
             # ---- Image embeddings (cached) ----
             image_embeddings = predictor.get_image_embedding()
@@ -142,7 +170,20 @@ def train_lora(
         )
 
         # --------------------------------------------------
-        # Save ONLY if IoU improves
+        # Save checkpoint every checkpoint_interval epochs
+        # --------------------------------------------------
+        if (epoch + 1) % checkpoint_interval == 0:
+            ckpt_file = ckpt_path.replace('.pt', f'_ckpt_epoch_{epoch+1}.pt')
+            torch.save({
+                'epoch': epoch,
+                'model_state': {k: v.cpu() for k, v in sam.state_dict().items() if "lora_" in k},
+                'optimizer_state': optimizer.state_dict(),
+                'best_iou': best_iou,
+            }, ckpt_file)
+            print(f"💾 Checkpoint saved at epoch {epoch+1}")
+
+        # --------------------------------------------------
+        # Save best model if IoU improves
         # --------------------------------------------------
         if mean_iou > best_iou:
             best_iou = mean_iou
@@ -151,6 +192,17 @@ def train_lora(
                 ckpt_path
             )
             print(f"✅ New best IoU {best_iou:.4f} — LoRA weights saved")
+
+    # --------------------------------------------------
+    # Save final model if requested
+    # --------------------------------------------------
+    if save_final:
+        final_path = ckpt_path.replace('.pt', '_final.pt')
+        torch.save(
+            {k: v.cpu() for k, v in sam.state_dict().items() if "lora_" in k},
+            final_path
+        )
+        print(f"💾 Final model saved to {final_path}")
 
     print(f"\n🏁 Training finished | Best training IoU = {best_iou:.4f}")
     return sam
