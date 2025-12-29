@@ -4,6 +4,7 @@ data/masks/*.*
 data/vectors/*.*
 models/*.*
 src/__pycache__/*.pyc
+*.pyc
 data/results/*.png
 notebooks/results/prompts/*.*
 *.json
