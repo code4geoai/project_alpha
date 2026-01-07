@@ -20,6 +20,8 @@ from src.config import (
     SPATIAL_PROMPTS_DIR,
     COMBINED_PROMPTS_DIR,
     ADAPTIVE_PROMPTS_DIR,
+    EVI2_PROMPTS_DIR,
+    B2B3_PROMPTS_DIR,
 )
 from src.step2_scaling import collect_image_paths, load_nc_image, load_parcels, extract_image_id
 
@@ -57,6 +59,30 @@ def compute_parcel_coverage(prompts, parcels, x_vals, y_vals):
                 break
 
     return (inside_count / len(prompts)) * 100.0
+
+
+def filter_prompts_to_parcels(prompts, parcels, x_vals, y_vals):
+    """
+    Filter prompts to only include those that fall within any parcel.
+    prompts: np.array of shape (N, 2) with (x, y) pixel coords
+    parcels: GeoDataFrame
+    x_vals, y_vals: 1D arrays from NetCDF for coord conversion
+    Returns: np.array of filtered prompts
+    """
+    if len(prompts) == 0:
+        return prompts
+
+    filtered_prompts = []
+    for x_pixel, y_pixel in prompts:
+        x_map = x_vals[int(x_pixel)]
+        y_map = y_vals[int(y_pixel)]
+        point = Point(x_map, y_map)
+        for _, parcel in parcels.iterrows():
+            if parcel.geometry.contains(point):
+                filtered_prompts.append([x_pixel, y_pixel])
+                break
+
+    return np.array(filtered_prompts) if filtered_prompts else np.array([]).reshape(0, 2)
 
 
 def _lock_imshow_limits(ax, rgb):
@@ -631,6 +657,8 @@ def visualize_all_prompt_types(dataset, country="Netherlands"):
         # Load all prompt types
         vanilla_path = os.path.join(VANILLA_PROMPTS_DIR, f"vanilla_prompts_{image_id}.npy")
         temporal_path = os.path.join(TEMPORAL_PROMPTS_DIR, f"superpixel_prompts_{image_id}.npy")
+        evi2_path = os.path.join(EVI2_PROMPTS_DIR, f"evi2_prompts_{image_id}.npy")
+        b2b3_path = os.path.join(B2B3_PROMPTS_DIR, f"b2b3_prompts_{image_id}.npy")
         spatial_path = os.path.join(SPATIAL_PROMPTS_DIR, f"spatial_prompts_{image_id}.npy")
         combined_path = os.path.join(COMBINED_PROMPTS_DIR, f"combined_prompts_{image_id}.npy")
         adaptive_path = os.path.join(ADAPTIVE_PROMPTS_DIR, f"adaptive_prompts_{image_id}.npy")
@@ -639,6 +667,8 @@ def visualize_all_prompt_types(dataset, country="Netherlands"):
         prompt_paths = {
             'vanilla': vanilla_path if os.path.exists(vanilla_path) else None,
             'temporal': temporal_path if os.path.exists(temporal_path) else None,
+            'evi2': evi2_path if os.path.exists(evi2_path) else None,
+            'b2b3': b2b3_path if os.path.exists(b2b3_path) else None,
             'spatial': spatial_path if os.path.exists(spatial_path) else None,
             'combined': combined_path if os.path.exists(combined_path) else None,
             'adaptive': adaptive_path if os.path.exists(adaptive_path) else None,
@@ -699,6 +729,8 @@ def visualize_all_prompt_types(dataset, country="Netherlands"):
         prompt_styles = {
             'vanilla': {'color': 'red', 'marker': 'o', 'size': 80, 'alpha': 0.9, 'edgecolor': 'darkred', 'linewidth': 2},
             'temporal': {'color': 'blue', 'marker': 's', 'size': 50, 'alpha': 0.8, 'edgecolor': 'darkblue', 'linewidth': 1},
+            'evi2': {'color': 'cyan', 'marker': 'v', 'size': 65, 'alpha': 0.8, 'edgecolor': 'darkcyan', 'linewidth': 2},
+            'b2b3': {'color': 'purple', 'marker': 'd', 'size': 62, 'alpha': 0.8, 'edgecolor': 'darkviolet', 'linewidth': 2},
             'spatial': {'color': 'green', 'marker': 'x', 'size': 60, 'alpha': 0.9, 'linewidth': 3},
             'combined': {'color': 'magenta', 'marker': '^', 'size': 70, 'alpha': 0.8, 'edgecolor': 'purple', 'linewidth': 2},
             'adaptive': {'color': 'orange', 'marker': 'D', 'size': 55, 'alpha': 0.8, 'edgecolor': 'darkorange', 'linewidth': 1},

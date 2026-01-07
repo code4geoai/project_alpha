@@ -17,6 +17,8 @@ VANILLA_PROMPTS_DIR   = os.path.abspath(os.path.join(RESULTS_DIR, "vanilla_promp
 SPATIAL_PROMPTS_DIR   = os.path.abspath(os.path.join(RESULTS_DIR, "spatial_prompts"))
 COMBINED_PROMPTS_DIR = os.path.abspath(os.path.join(RESULTS_DIR, "combined_prompts"))
 ADAPTIVE_PROMPTS_DIR = os.path.abspath(os.path.join(RESULTS_DIR, "adaptive_prompts"))
+EVI2_PROMPTS_DIR = os.path.abspath(os.path.join(RESULTS_DIR, "evi2_prompts"))
+B2B3_PROMPTS_DIR = os.path.abspath(os.path.join(RESULTS_DIR, "b2b3_prompts"))
 PRED_MASK_DIR = os.path.abspath(os.path.join(RESULTS_DIR, "predicted_masks"))
 PRED_VIS_DIR = os.path.abspath(os.path.join(RESULTS_DIR, "pred_vis"))
 SUMMARY_CSV = os.path.abspath(os.path.join(RESULTS_DIR, "sam_summary.csv"))
@@ -27,6 +29,8 @@ os.makedirs(VANILLA_PROMPTS_DIR, exist_ok=True)
 os.makedirs(SPATIAL_PROMPTS_DIR, exist_ok=True)
 os.makedirs(COMBINED_PROMPTS_DIR, exist_ok=True)
 os.makedirs(ADAPTIVE_PROMPTS_DIR, exist_ok=True)
+os.makedirs(EVI2_PROMPTS_DIR, exist_ok=True)
+os.makedirs(B2B3_PROMPTS_DIR, exist_ok=True)
 
 # SAM
 SAM_CHECKPOINT = os.path.join(BASE_DIR, "models", "sam_vit_h.pth")

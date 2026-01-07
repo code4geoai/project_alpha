@@ -2,9 +2,12 @@
 
 from .metric_interface import NDVIMetric, NormalizedMetric
 from .temporal_metrics import (
-    NDVIVarianceMetric, 
-    NDVIPeakDifferenceMetric, 
-    CombinedTemporalMetric
+    NDVIVarianceMetric,
+    NDVIPeakDifferenceMetric,
+    CombinedTemporalMetric,
+    EVIVarianceMetric,
+    EVIPeakDifferenceMetric,
+    CombinedEVITemporalMetric
 )
 from .spatial_metrics import (
     SobelGradientMetric,
@@ -15,12 +18,15 @@ from .spatial_metrics import (
 
 __all__ = [
     'NDVIMetric',
-    'NormalizedMetric', 
+    'NormalizedMetric',
     'NDVIVarianceMetric',
     'NDVIPeakDifferenceMetric',
     'CombinedTemporalMetric',
+    'EVIVarianceMetric',
+    'EVIPeakDifferenceMetric',
+    'CombinedEVITemporalMetric',
     'SobelGradientMetric',
-    'LocalVarianceMetric', 
+    'LocalVarianceMetric',
     'NDVIQuantileMetric',
     'CombinedSpatialMetric'
 ]

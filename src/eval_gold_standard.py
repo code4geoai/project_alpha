@@ -23,37 +23,36 @@ from src.config import (
     SPATIAL_PROMPTS_DIR,
     COMBINED_PROMPTS_DIR,
     ADAPTIVE_PROMPTS_DIR,
+    EVI2_PROMPTS_DIR,
+    B2B3_PROMPTS_DIR,
 )
 
 
 @torch.no_grad()
 def evaluate(
     dataset,
-    mode="vanilla",      # "vanilla" | "ndvi" | "ndvi_lora"
+    mode="vanilla",      # "vanilla" | "ndvi-spectral"
     device="cuda",
-    lora_ckpt="checkpoints/lora_mask_decoder.pt",
+    prompt_type="temporal",  # For ndvi-spectral mode: "temporal", "spatial", "evi2", "b2b3", "combined", "adaptive"
 ):
     """
     Gold-standard evaluator for SAM ablations.
+    
+    Args:
+        dataset: Dataset to evaluate
+        mode: "vanilla" or "ndvi-spectral"
+        device: Device for computation
+        prompt_type: Specific prompt type for ndvi-spectral mode (ignored for vanilla)
     """
 
-    assert mode in ["vanilla", "ndvi", "ndvi_lora"]
+    assert mode in ["vanilla", "ndvi-spectral"]
 
     # --------------------------------------------------
-    # Load SAM
+    # Load SAM (base model for both modes)
     # --------------------------------------------------
-    if mode == "vanilla":
-        sam = sam_model_registry[SAM_MODEL_TYPE](checkpoint=SAM_CHECKPOINT)
-        sam.to(device)
-        predictor = SamPredictor(sam)
-
-    else:
-        sam, predictor, _ = load_sam_with_lora(device=device)
-        if mode == "ndvi_lora":
-            assert os.path.exists(lora_ckpt), "LoRA checkpoint missing"
-            lora_state = torch.load(lora_ckpt, map_location=device)
-            sam.load_state_dict(lora_state, strict=False)
-
+    sam = sam_model_registry[SAM_MODEL_TYPE](checkpoint=SAM_CHECKPOINT)
+    sam.to(device)
+    predictor = SamPredictor(sam)
     sam.eval()
 
     # --------------------------------------------------
@@ -78,11 +77,24 @@ def evaluate(
                 VANILLA_PROMPTS_DIR,
                 f"vanilla_prompts_{image_id}.npy"
             )
+        elif mode == "ndvi-spectral":
+            # Map prompt_type to directory and filename
+            prompt_mappings = {
+                "temporal": (TEMPORAL_PROMPTS_DIR, f"superpixel_prompts_{image_id}.npy"),
+                "spatial": (SPATIAL_PROMPTS_DIR, f"spatial_prompts_{image_id}.npy"),
+                "evi2": (EVI2_PROMPTS_DIR, f"evi2_prompts_{image_id}.npy"),
+                "b2b3": (B2B3_PROMPTS_DIR, f"b2b3_prompts_{image_id}.npy"),
+                "combined": (COMBINED_PROMPTS_DIR, f"combined_prompts_{image_id}.npy"),
+                "adaptive": (ADAPTIVE_PROMPTS_DIR, f"adaptive_prompts_{image_id}.npy"),
+            }
+            
+            if prompt_type not in prompt_mappings:
+                raise ValueError(f"Invalid prompt_type '{prompt_type}'. Must be one of {list(prompt_mappings.keys())}")
+            
+            prompt_dir, prompt_filename = prompt_mappings[prompt_type]
+            prompt_path = os.path.join(prompt_dir, prompt_filename)
         else:
-            prompt_path = os.path.join(
-                TEMPORAL_PROMPTS_DIR,
-                f"superpixel_prompts_{image_id}.npy"
-            )
+            raise ValueError(f"Invalid mode '{mode}'. Must be 'vanilla' or 'ndvi-spectral'")
 
         if not os.path.exists(prompt_path):
             continue
@@ -148,7 +160,8 @@ def evaluate_all_prompt_types(
     
     Args:
         dataset: Dataset containing images and masks
-        prompt_types: List of prompt types to evaluate ['vanilla', 'temporal', 'spatial', 'combined', 'adaptive']
+        prompt_types: List of prompt types to evaluate 
+                     ['vanilla', 'temporal', 'spatial', 'evi2', 'b2b3', 'combined', 'adaptive']
         device: Device for computation
         subset_size: Evaluate only first N images if specified
         save_plots: Whether to save visualization plots
@@ -159,7 +172,8 @@ def evaluate_all_prompt_types(
     """
     
     if prompt_types is None:
-        prompt_types = ['vanilla', 'temporal', 'spatial', 'combined', 'adaptive']
+        # Default: evaluate vanilla + all spectral prompt types
+        prompt_types = ['vanilla', 'temporal', 'spatial', 'evi2', 'b2b3', 'combined', 'adaptive']
     
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
@@ -171,6 +185,8 @@ def evaluate_all_prompt_types(
         'spatial': SPATIAL_PROMPTS_DIR,
         'combined': COMBINED_PROMPTS_DIR,
         'adaptive': ADAPTIVE_PROMPTS_DIR,
+        'evi2': EVI2_PROMPTS_DIR,
+        'b2b3': B2B3_PROMPTS_DIR,
     }
     
     # Prompt type to filename mapping
@@ -180,6 +196,8 @@ def evaluate_all_prompt_types(
         'spatial': lambda image_id: f"spatial_prompts_{image_id}.npy",
         'combined': lambda image_id: f"combined_prompts_{image_id}.npy",
         'adaptive': lambda image_id: f"adaptive_prompts_{image_id}.npy",
+        'evi2': lambda image_id: f"evi2_prompts_{image_id}.npy",
+        'b2b3': lambda image_id: f"b2b3_prompts_{image_id}.npy",
     }
     
     # Filter prompt types that exist
@@ -510,6 +528,24 @@ def evaluate_prompt_types_quick(dataset, prompt_types=None, subset_size=10):
     )
 
 
+def evaluate_vanilla_vs_ndvi_spectral(dataset, prompt_type="temporal", subset_size=None):
+    """
+    Compare vanilla prompts vs ndvi-spectral prompts.
+    
+    Args:
+        dataset: Dataset to evaluate
+        prompt_type: Specific spectral prompt type to compare ('temporal', 'spatial', 'evi2', 'b2b3', 'combined', 'adaptive')
+        subset_size: Limit evaluation to subset of images
+    """
+    return evaluate_all_prompt_types(
+        dataset=dataset,
+        prompt_types=['vanilla', prompt_type],
+        subset_size=subset_size,
+        save_plots=True,
+        output_dir=f"vanilla_vs_{prompt_type}_evaluation"
+    )
+
+
 def evaluate_spatial_vs_temporal(dataset, subset_size=None):
     """
     Specific comparison between spatial and temporal prompts.
@@ -523,13 +559,26 @@ def evaluate_spatial_vs_temporal(dataset, subset_size=None):
     )
 
 
-def evaluate_all_methods_comprehensive(dataset, subset_size=None):
+def evaluate_all_ndvi_spectral_types(dataset, subset_size=None):
     """
-    Comprehensive evaluation of all available prompt methods.
+    Evaluate all ndvi-spectral prompt types (temporal, spatial, evi2, b2b3, combined, adaptive).
     """
     return evaluate_all_prompt_types(
         dataset=dataset,
-        prompt_types=['vanilla', 'temporal', 'spatial', 'combined', 'adaptive'],
+        prompt_types=['temporal', 'spatial', 'evi2', 'b2b3', 'combined', 'adaptive'],
+        subset_size=subset_size,
+        save_plots=True,
+        output_dir="ndvi_spectral_evaluation_results"
+    )
+
+
+def evaluate_all_methods_comprehensive(dataset, subset_size=None):
+    """
+    Comprehensive evaluation of all available prompt methods (vanilla + all spectral types).
+    """
+    return evaluate_all_prompt_types(
+        dataset=dataset,
+        prompt_types=['vanilla', 'temporal', 'spatial', 'evi2', 'b2b3', 'combined', 'adaptive'],
         subset_size=subset_size,
         save_plots=True,
         output_dir="comprehensive_evaluation_results"

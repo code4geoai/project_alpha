@@ -267,7 +267,7 @@ def enhanced_evaluation_with_spectral_metrics(dataset, prompt_types=None, subset
                 prompts_dict = {}
                 for prompt_type in prompt_types or ['multispectral']:
                     try:
-                        from src.config import MULTISPECTRAL_PROMPTS_DIR, VANILLA_PROMPTS_DIR, TEMPORAL_PROMPTS_DIR, SPATIAL_PROMPTS_DIR, COMBINED_PROMPTS_DIR, ADAPTIVE_PROMPTS_DIR
+                        from src.config import MULTISPECTRAL_PROMPTS_DIR, VANILLA_PROMPTS_DIR, TEMPORAL_PROMPTS_DIR, SPATIAL_PROMPTS_DIR, COMBINED_PROMPTS_DIR, ADAPTIVE_PROMPTS_DIR, EVI2_PROMPTS_DIR, B2B3_PROMPTS_DIR
                         
                         prompt_dirs = {
                             'multispectral': MULTISPECTRAL_PROMPTS_DIR,
@@ -276,6 +276,8 @@ def enhanced_evaluation_with_spectral_metrics(dataset, prompt_types=None, subset
                             'spatial': SPATIAL_PROMPTS_DIR,
                             'combined': COMBINED_PROMPTS_DIR,
                             'adaptive': ADAPTIVE_PROMPTS_DIR,
+                            'evi2': EVI2_PROMPTS_DIR,
+                            'b2b3': B2B3_PROMPTS_DIR,
                         }
                         
                         if prompt_type in prompt_dirs:

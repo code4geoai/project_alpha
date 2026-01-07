@@ -11,6 +11,15 @@ import torch.nn.functional as F
 
 from src.lora_sam import load_sam_with_lora
 from src.step2_scaling import load_nc_image
+from src.config import (
+    TEMPORAL_PROMPTS_DIR,
+    EVI2_PROMPTS_DIR,
+    B2B3_PROMPTS_DIR,
+    SPATIAL_PROMPTS_DIR,
+    COMBINED_PROMPTS_DIR,
+    ADAPTIVE_PROMPTS_DIR,
+    VANILLA_PROMPTS_DIR,
+)
 
 
 # -------------------------
@@ -29,6 +38,7 @@ def compute_iou(pred, gt, eps=1e-6):
 def train_lora(
     dataset,
     temporal_prompt_dir,
+    prompt_type="temporal",  # "temporal" | "evi2" | "b2b3" | "spatial" | "combined" | "adaptive" | "vanilla"
     epochs=20,
     lr=1e-4,
     device="cuda",
@@ -41,13 +51,54 @@ def train_lora(
     """
     Train LoRA adapters on SAM mask decoder only.
     Training-set metrics only (no validation).
-
+    
+    prompt_type: Type of prompts to use for training
+        - "temporal": Temporal NDVI variance prompts
+        - "evi2": EVI2 temporal enhancement prompts  
+        - "b2b3": B2B3 gradient-based prompts
+        - "spatial": Spatial gradient prompts
+        - "combined": Combined temporal + spatial prompts
+        - "adaptive": Adaptive prompts
+        - "vanilla": Basic vanilla prompts
+    
     save_final: Save model at training completion.
     checkpoint_interval: Save checkpoint every N epochs.
     resume_ckpt: Path to checkpoint to resume from.
     """
 
     os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
+
+    # --------------------------------------------------
+    # Prompt type mappings
+    # --------------------------------------------------
+    prompt_type_to_dir = {
+        'temporal': temporal_prompt_dir,
+        'evi2': EVI2_PROMPTS_DIR,
+        'b2b3': B2B3_PROMPTS_DIR,
+        'spatial': SPATIAL_PROMPTS_DIR,
+        'combined': COMBINED_PROMPTS_DIR,
+        'adaptive': ADAPTIVE_PROMPTS_DIR,
+        'vanilla': VANILLA_PROMPTS_DIR,
+    }
+    
+    prompt_type_to_filename = {
+        'temporal': lambda image_id: f"superpixel_prompts_{image_id}.npy",
+        'evi2': lambda image_id: f"evi2_prompts_{image_id}.npy",
+        'b2b3': lambda image_id: f"b2b3_prompts_{image_id}.npy",
+        'spatial': lambda image_id: f"spatial_prompts_{image_id}.npy",
+        'combined': lambda image_id: f"combined_prompts_{image_id}.npy",
+        'adaptive': lambda image_id: f"adaptive_prompts_{image_id}.npy",
+        'vanilla': lambda image_id: f"vanilla_prompts_{image_id}.npy",
+    }
+    
+    # Validate prompt_type
+    if prompt_type not in prompt_type_to_dir:
+        raise ValueError(f"Invalid prompt_type '{prompt_type}'. Valid options: {list(prompt_type_to_dir.keys())}")
+    
+    prompt_dir = prompt_type_to_dir[prompt_type]
+    prompt_filename = prompt_type_to_filename[prompt_type]
+    
+    print(f"[INFO] Using {prompt_type} prompts from {prompt_dir}")
 
     # --------------------------------------------------
     # Load SAM + LoRA
@@ -101,9 +152,12 @@ def train_lora(
             predictor.set_image((rgb * 255).astype(np.uint8))
 
             # ---- Load filtered prompts ----
-            points_np = np.load(
-                os.path.join(temporal_prompt_dir, f"superpixel_prompts_{image_id}.npy")
-            )[:max_points]
+            prompt_file = os.path.join(prompt_dir, prompt_filename(image_id))
+            if not os.path.exists(prompt_file):
+                print(f"  ⚠️  SKIP: {prompt_type} prompts not found for image {image_id}")
+                continue
+                
+            points_np = np.load(prompt_file)[:max_points]
 
             points = torch.tensor(points_np, device=device, dtype=torch.float32)
             labels = torch.ones(len(points), device=device)

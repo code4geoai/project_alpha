@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-This document outlines the architectural enhancements to transform the current NDVI-only prompt system into a comprehensive multi-spectral prompt system using all 4 AI4Boundaries bands (B2, B3, B4, B8) with SAM mask decoder fine-tuning integration.
+This document outlines an incremental enhancement strategy to transform the current robust NDVI prompt system into a comprehensive multi-spectral approach using AI4Boundaries bands (B2, B3, B4, B8). The foundation system is now fully operational with all NDVI variants (temporal, spatial, combined, adaptive) properly bounded to parcels. The enhancement strategy adds harmonic composite prompts as the primary advancement, followed by EVI2-temporal and B2-B3-gradient approaches, maintaining separate prompt types for scientific rigor and risk mitigation.
 
 ## Current System Limitations
 
@@ -12,7 +12,7 @@ This document outlines the architectural enhancements to transform the current N
 - **Impact**: Limited discrimination capability for different vegetation types and soil conditions
 
 ### 2. **Temporal Analysis Constraints**
-- **Current**: Basic NDVI variance and peak difference
+- **Current**: Temporal NDVI variance and peak difference from time series (computed in src/step0_ndvi_timeseries.py)
 - **Missing**: Multi-spectral temporal composites (MAD metric)
 - **Impact**: Unable to capture temporal stability across different spectral bands
 
@@ -26,135 +26,240 @@ This document outlines the architectural enhancements to transform the current N
 - **Missing**: Mask decoder fine-tuning for agricultural domain
 - **Impact**: Poor adaptation to field boundary characteristics
 
-## Enhanced Multi-Spectral Architecture
+## How Current NDVI Variants Work
+- **Temporal Prompts**: Use NDVI variance + peak difference across time
+- **Spatial Prompts**: Compute spatial gradients of NDVI time series
+- **Combined Prompts**: Merge temporal + spatial NDVI information
+- **Adaptive Prompts**: Automatically select best method (temporal/spatial/combined)
 
-### 1. **Multi-Spectral Data Processing Layer**
+## Incremental Multi-Spectral Enhancement Strategy
 
-#### 1.1 Enhanced Time Series Generation
-Process all 4 AI4Boundaries bands (B02, B03, B04, B08) simultaneously, computing vegetation indices like NDVI and EVI2.
+### 1. **Current Prompt System (✅ FULLY FUNCTIONAL)**
+The existing system includes:
+- **Vanilla Prompts**: Geometric-based, not spectral
+- **NDVI Temporal Prompts**: Time series analysis using NDVI variance and peak difference across time
+- **NDVI Variants** (All Issues Resolved):
+  - **Temporal Prompts**: Use NDVI variance + peak difference across time ✅
+  - **NDVI-Gradient (Current Spatial)**: Utilize current spatial gradients of NDVI for enhanced spatial analysis ✅
+  - **Combined Prompts**: Merge temporal + spatial NDVI information ✅ **(Parcel bounding fixed)**
+  - **Adaptive Prompts**: Automatically select best method (temporal/spatial/combined) ✅ **(Parcel bounding fixed)**
 
-#### 1.2 Multi-Spectral Temporal Composites
-Compute Mean Absolute Deviation (MAD) temporal composites for all spectral bands and vegetation indices to capture temporal stability.
+#### 1.1 Recent Fixes Applied
+- **Parcel Bounding Issue Resolved**: Combined and adaptive prompts now properly contained within parcels
+- **Enhanced Border Avoidance**: Added image border buffer to prevent edge artifacts
+- **Robust Validation**: Improved parcel containment checking with guaranteed minimum prompts per parcel
+- **Consistent Behavior**: All prompt types now use reliable parcel bounding methods
 
-### 2. **Enhanced Spatial Analysis Layer**
+### 2. **Enhanced Multi-Spectral Prompt Types**
 
-#### 2.1 Multi-Spectral Gradient Analysis
-Compute spatial gradients for each spectral band and vegetation index composite using Sobel filters.
+#### 2.1 EVI2 Temporal Prompts (Supplementary to NDVI)
+- **Formula**: EVI2 = 2.5 × (B8 - B4) / (B8 + 4.4×B4 + 1)
+- **Bands**: Uses B8 (NIR) and B4 (Red) - same bands as NDVI but with enhanced coefficients
+- **Advantage**: More sensitive to canopy structure, less affected by soil background than NDVI
+- **Relationship**: Complements NDVI temporal prompts rather than replacing them
+- **Integration**: Extends existing time series processing to compute both NDVI and EVI2 in parallel
 
-#### 2.2 Spectral Texture Analysis
-Compute texture features across spectral dimensions using methods like Local Binary Pattern (LBP) and Gray-Level Co-occurrence Matrix (GLCM) analysis.
+#### 2.2 B2-B3 Gradient Prompts (Complementary to NDVI Gradients)
+- **Spatial Analysis**: Compute Sobel gradients for B2 (blue) and B3 (green) bands
+- **Different from NDVI Gradients**: While existing NDVI spatial prompts use NDVI gradients (gradients of NDVI time series), B2-B3 gradients use direct gradients of blue/green bands
+- **Spectral Information**: Detects boundaries invisible to red-NIR vegetation analysis (e.g., soil differences, water stress, early crop stages)
+- **Combined Approach**: Can be merged with existing NDVI gradients for enhanced boundary detection
+- **Selection**: Prioritize locations with high spectral contrast in blue-green spectrum
 
-### 3. **Enhanced Prompt Generation Layer**
+### 3. **Fallback Strategy: Harmonic Temporal Composites**
+If the incremental approach (NDVI + EVI2 + B2-B3 gradients) fails to achieve desired parcel coverage:
+- **Harmonic Regression**: Apply UKFields-style phenological modeling using constant, time, cosine, and sine terms
+- **Phase and Amplitude**: Derive temporal stability metrics for enhanced boundary detection
+- **Visualization**: Create RGB composites using phase, amplitude, and median values for SAM input
 
-#### 3.1 Multi-Spectral Saliency Builder
-Build saliency maps using weighted combination of spectral gradients, incorporating vegetation index information and spatial/temporal stability constraints.
+### 4. **Prompt Generation Architecture**
 
-#### 3.2 Enhanced Prompt Selection Algorithms
-Select optimal prompts using spectral diversity criteria, prioritizing high spectral contrast locations with spatial distribution within parcels.
+#### 4.1 Separate Prompt Types
+Maintain modular design with distinct prompt categories:
+1. **Vanilla** (geometric)
+2. **NDVI-temporal + variants** (spatial, combined, adaptive)
+3. **EVI2-temporal** (enhanced vegetation index)
+4. **B2-B3-gradient** (blue-green spectral gradients)
+5. **Harmonic-composite** (fallback option)
 
-### 4. **SAM Mask Decoder Fine-Tuning Integration**
+#### 4.2 Incremental Enhancement Process
+- **Phase 1**: Implement EVI2-temporal and validate improvement over NDVI-temporal
+- **Phase 2**: Add B2-B3 gradients and measure additional gains
+- **Phase 3**: Deploy harmonic composites as fallback if needed
+- **Evaluation**: Each phase independently validated before proceeding
 
-#### 4.1 Training Data Preparation
-Prepare training data by creating (prompt, mask) pairs for SAM mask decoder fine-tuning using enhanced multi-spectral prompts and parcel boundaries.
+## Addressing NDVI Prompt Gaps
 
-#### 4.2 SAM Integration Layer
-Enhanced SAM prediction using multi-spectral prompts with optional fine-tuned decoder for improved segmentation.
+The NDVI-based centroid prompts often fail to generate prompts for all parcels in an image due to their reliance solely on red (B4) and near-infrared (B8) bands. This spectral limitation results in poor discrimination for parcels with similar NDVI values but differences in blue (B2) and green (B3) bands, such as certain crop types, soil conditions, or early/late growth stages. Consequently, prompts may cluster in high-NDVI areas, leaving low-contrast or spectrally subtle parcels uncovered.
+
+Research from projects like UKFields demonstrates that harmonic temporal composites, derived from phenological modeling of vegetation indices, significantly improve field boundary detection when used as input for segmentation models like SAM. Building on this, the multi-spectral approach addresses the gap by leveraging all four AI4Boundaries bands (B2, B3, B4, B8) to compute additional vegetation indices like EVI2, which is more sensitive to canopy structure and less affected by soil background. Temporal MAD composites or harmonic regression capture stability and phenological cycles across all spectral bands, reducing noise from clouds or atmosphere that could obscure parcels in NDVI-only analysis. Multi-spectral spatial gradients and texture analysis (e.g., using Sobel filters, LBP, and GLCM) detect boundaries in spectrally similar regions that NDVI gradients miss. Prompt selection algorithms prioritize spectral diversity and spatial distribution within parcels, ensuring broader coverage by identifying high-contrast locations across multiple bands rather than just NDVI peaks. This comprehensive spectral and temporal integration aims to generate prompts for all parcels, filling the gaps inherent in NDVI-based methods and aligning with state-of-the-art practices in agricultural field delineation. The AI4Boundaries dataset's multi-band monthly composites and diverse stratified sampling provide an ideal testbed, ensuring that multi-spectral prompts can be validated against high-accuracy GSAA labels for comprehensive parcel coverage.
 
 ## Implementation Architecture
 
-### Layer 1: Data Processing
-- **File**: `src/multispectral_processor.py`
-- **Purpose**: Enhanced time series generation and temporal compositing
-- **Input**: NetCDF files with B02, B03, B04, B08 bands
-- **Output**: Multi-spectral temporal composites
+### Layer 1: Enhanced Time Series Processing
+- **Purpose**: Generate EVI2 alongside existing NDVI time series
+- **Input**: AI4Boundaries Sentinel-2 monthly composites (B2, B3, B4, B8) - 6 months temporal data
+- **Output**: NDVI and EVI2 temporal stacks with variance analysis
+- **Integration**: Extends `src/step0_ndvi_timeseries.py` to include EVI2
 
-### Layer 2: Spatial Analysis  
-- **File**: `src/multispectral_spatial_analyzer.py`
-- **Purpose**: Multi-spectral gradient and texture analysis
-- **Input**: Multi-spectral temporal composites
-- **Output**: Enhanced spatial saliency maps
+### Layer 2: Multi-Band Spatial Analysis
+- **Purpose**: Compute gradients for B2 and B3 bands alongside NDVI
+- **Input**: Temporal composites (NDVI, EVI2, B2, B3)
+- **Output**: Multi-spectral gradient maps for prompt generation
+- **Methods**: Sobel filtering on individual bands with combined saliency
 
-### Layer 3: Prompt Generation
-- **File**: `src/enhanced_prompt_generator.py`
-- **Purpose**: Multi-spectral prompt selection and optimization
-- **Input**: Spatial saliency maps and parcel boundaries
-- **Output**: Enhanced multi-spectral prompts
+### Layer 3: Modular Prompt Generation
+- **Purpose**: Generate separate prompt types with independent validation
+- **Input**: Spatial gradients and temporal stability metrics
+- **Output**: Five distinct prompt categories
+  - Vanilla (geometric)
+  - NDVI-temporal variants
+  - EVI2-temporal
+  - B2-B3-gradient
+  - Harmonic-composite (fallback)
 
 ### Layer 4: SAM Integration
-- **File**: `src/enhanced_sam_integrator.py`
-- **Purpose**: SAM fine-tuning and enhanced prediction
-- **Input**: Enhanced prompts and training data
-- **Output**: Improved segmentation results
+- **Purpose**: Enhanced SAM prediction using multiple prompt types
+- **Input**: Various prompt categories and training data
+- **Output**: Improved segmentation with option for fine-tuned decoder
 
 ### Layer 5: Evaluation Framework
-- **File**: `src/enhanced_evaluation.py`
-- **Purpose**: Comprehensive evaluation of multi-spectral approach
-- **Input**: Predictions and ground truth
-- **Output**: Performance metrics and analysis
+- **Purpose**: Compare performance across prompt types
+- **Input**: Predictions from different prompt categories and ground truth
+- **Output**: Performance metrics and comparative analysis
+- **Metrics**: Parcel coverage rate, boundary detection accuracy, computational efficiency
 
 ## Key Architectural Changes
 
-### 1. **Data Flow Enhancement**
+### 1. **Incremental Prompt Enhancement**
 ```
-NetCDF (B02,B03,B04,B08) → MultiSpectralProcessor → TemporalComposites
-                                                    ↓
-ParcelBoundaries ← EnhancedPromptGenerator ← SpatialAnalyzer
-                                                    ↓
-EnhancedSAMIntegrator → ImprovedSegmentation → Evaluation
+Vanilla → NDVI-temporal → EVI2-temporal → B2-B3-gradient → Harmonic-fallback
+    ↓           ↓              ↓              ↓                ↓
+  SAM       Enhanced      Enhanced      Enhanced        Enhanced
+           Parcel      Parcel Coverage  Parcel Coverage  Parcel Coverage
+           Coverage        +10%           +15%            +20%
 ```
 
-### 2. **Integration Points**
-- **Backward Compatibility**: Maintain existing vanilla prompts as fallback
-- **Progressive Enhancement**: Start with NDVI, add spectral layers incrementally
-- **Modular Design**: Each layer can be independently tested and optimized
+### 2. **Modular Integration Strategy**
+- **Backward Compatibility**: All existing prompt types remain functional
+- **Independent Validation**: Each enhancement measured against previous baseline
+- **Scientific Rigor**: Clear attribution of improvements to specific components
+- **Risk Management**: Fallback options ensure system reliability
 
-### 3. **Performance Considerations**
-- **Memory Efficiency**: Process bands in batches to manage memory
-- **Computational Optimization**: Use GPU acceleration for gradient computations
-- **Parallel Processing**: Enable multi-processing for temporal composite generation
+### 3. **Performance Optimization**
+- **Memory Efficiency**: EVI2 shares memory footprint with NDVI (same bands)
+- **Computational Cost**: B2-B3 gradients add minimal processing overhead
+- **Validation Speed**: Separate prompt types enable faster iterative testing
+- **Scalability**: Modular design supports adding new spectral indices easily
 
-## Expected Improvements
+## Expected Improvements by Phase
 
-### 1. **Spectral Discrimination**
-- **Current**: NDVI-only boundary detection
-- **Enhanced**: Multi-spectral boundary detection using all 4 bands
-- **Expected Gain**: 2-3x improvement in boundary detection accuracy
+### Phase 1: EVI2 Enhancement
+- **Current**: NDVI-temporal prompts
+- **Enhanced**: EVI2-temporal prompts with improved canopy sensitivity
+- **Expected Gain**: 5-15% improvement in parcel coverage, especially for dense vegetation
 
-### 2. **Temporal Stability**
-- **Current**: Basic variance-based temporal analysis
-- **Enhanced**: MAD-based temporal composites for all spectral bands
-- **Expected Gain**: Better handling of atmospheric noise and cloud contamination
+### Phase 2: B2-B3 Gradient Addition
+- **Current**: EVI2-enhanced NDVI system
+- **Enhanced**: Multi-band gradient analysis (B2, B3, B4, B8)
+- **Expected Gain**: Additional 5-10% coverage improvement for spectrally subtle boundaries
 
-### 3. **Spatial Precision**
-- **Current**: NDVI gradient-based boundaries
-- **Enhanced**: Multi-spectral gradient and texture analysis
-- **Expected Gain**: Improved detection of spectrally subtle boundaries
+### Phase 3: Harmonic Composite Fallback
+- **Current**: Incremental spectral enhancements
+- **Enhanced**: Phenological modeling for challenging regions
+- **Expected Gain**: Robust performance in edge cases and complex agricultural landscapes
 
-### 4. **SAM Adaptation**
-- **Current**: Zero-shot SAM performance
-- **Enhanced**: Fine-tuned SAM decoder for agricultural domain
-- **Expected Gain**: Significant improvement in segmentation quality
+### 4. **Overall System Benefits**
+- **Modular Validation**: Clear attribution of improvements to specific components
+- **Risk Mitigation**: Fallback mechanisms ensure system reliability
+- **Scientific Rigor**: Each enhancement independently validated before integration
+- **Scalability**: Foundation for future spectral index additions
 
-## Risk Mitigation
+## Risk Mitigation - Incremental Approach
 
-### 1. **Computational Complexity**
-- **Risk**: Increased computational requirements
-- **Mitigation**: GPU acceleration and batch processing
+### 1. **Performance Validation Risk**
+- **Risk**: EVI2 or B2-B3 enhancements may not improve parcel coverage
+- **Mitigation**:
+  - Independent validation of each enhancement before integration
+  - Clear performance metrics (parcel coverage %, boundary accuracy)
+  - Fallback to previous working version if enhancement fails
 
-### 2. **Data Quality Dependencies**
-- **Risk**: Poor performance with low-quality spectral data
-- **Mitigation**: Quality assessment and fallback mechanisms
+### 2. **Computational Overhead**
+- **Risk**: Additional processing requirements for multi-spectral analysis
+- **Mitigation**:
+  - EVI2 uses same computational footprint as NDVI (same input bands)
+  - B2-B3 gradients add minimal processing overhead
+  - GPU acceleration for gradient computations when needed
 
-### 3. **Integration Complexity**
-- **Risk**: Complex integration with existing codebase
-- **Mitigation**: Modular design with clear interfaces
+### 3. **System Integration Risk**
+- **Risk**: Breaking existing NDVI-based functionality
+- **Mitigation**:
+  - Maintain backward compatibility with all existing prompt types
+  - Modular design allows independent testing and debugging
+  - Clear separation between enhancement phases
+  - Comprehensive testing on AI4Boundaries dataset before deployment
 
-## Next Steps
+## Next Steps - Harmonic Composite Implementation
 
-1. **Phase 1**: Implement MultiSpectralProcessor
-2. **Phase 2**: Add SpatialAnalyzer for multi-spectral gradients
-3. **Phase 3**: Create EnhancedPromptGenerator
-4. **Phase 4**: Integrate SAM fine-tuning
-5. **Phase 5**: Comprehensive evaluation and optimization
+### ✅ Current Status (Parcel Bounding Fixed)
+- **All NDVI Variants Operational**: Temporal, spatial, combined, and adaptive prompts now fully functional
+- **Parcel Bounding Resolved**: Combined and adaptive prompts properly contained within parcels
+- **Robust Validation**: Enhanced parcel containment checking implemented
+- **System Stability**: All prompt generation methods working consistently
 
-This architecture provides a clear path from the current NDVI-only system to a comprehensive multi-spectral prompt system with enhanced SAM integration.
+### 🎯 Next Implementation Phase: Harmonic Composite (Primary Focus)
+
+#### Phase 1: Harmonic Regression Foundation (Week 1-2)
+1. **Harmonic Analysis Module**: Create `src/harmonic_analysis.py` for UKFields-style phenological modeling
+   - Implement constant, time, cosine, and sine term regression
+   - Derive phase and amplitude metrics for temporal stability
+   - Add harmonic composite generation for SAM input
+
+2. **Time Series Enhancement**: Extend `src/step0_ndvi_timeseries.py` to support harmonic analysis
+   - Integrate harmonic regression with existing NDVI/EVI2 time series
+   - Add harmonic stability metrics alongside variance-based approaches
+   - Maintain backward compatibility with current prompt generation
+
+3. **Harmonic Prompt Generation**: Create new prompt category in `src/superpixels_temporal.py`
+   - Implement `run_harmonic_superpixels()` function
+   - Add harmonic-based saliency computation using phase/amplitude metrics
+   - Integrate with existing parcel bounding and validation logic
+
+#### Phase 2: Multi-Spectral Integration (Week 3-4)
+1. **EVI2 Temporal Enhancement**: Implement enhanced vegetation index alongside NDVI
+   - Formula: EVI2 = 2.5 × (B8 - B4) / (B8 + 4.4×B4 + 1)
+   - Extend time series processing to compute EVI2 in parallel with NDVI
+   - Create EVI2-temporal prompts following existing patterns
+
+2. **B2-B3 Gradient Analysis**: Add blue-green spectral gradient detection
+   - Implement Sobel filtering on B2 (blue) and B3 (green) bands
+   - Create B2-B3 gradient prompts complementary to NDVI gradients
+   - Integrate multi-band spatial analysis with harmonic temporal composites
+
+#### Phase 3: System Integration and Validation (Week 5-6)
+1. **Modular Prompt Architecture**: Ensure all prompt types work independently and in combination
+   - Vanilla (geometric)
+   - NDVI-temporal variants (temporal, spatial, combined, adaptive)
+   - EVI2-temporal (enhanced vegetation index)
+   - B2-B3-gradient (blue-green spectral gradients)
+   - Harmonic-composite (phenological modeling)
+
+2. **Performance Benchmarking**: Comprehensive evaluation against AI4Boundaries ground truth
+   - Compare parcel coverage rates across all prompt types
+   - Measure boundary detection accuracy improvements
+   - Evaluate computational efficiency and memory usage
+
+3. **Fallback Strategy**: Implement intelligent method selection
+   - Primary: Harmonic composite for complex agricultural landscapes
+   - Secondary: Multi-spectral (EVI2 + B2-B3) for standard cases
+   - Tertiary: NDVI variants for simple scenarios
+   - Validation: Automatic method selection based on parcel characteristics
+
+### 🚀 Implementation Priorities
+
+1. **Harmonic Composite First**: Focus on phenological modeling as the primary enhancement
+2. **Multi-Spectral Enhancement**: Add EVI2 and B2-B3 gradients as complementary approaches
+3. **Intelligent Fallback**: Implement smart method selection for optimal parcel coverage
+4. **Comprehensive Validation**: Benchmark all approaches on AI4Boundaries dataset
+
+This roadmap transforms the current robust NDVI system into a comprehensive multi-spectral, phenologically-aware prompt generation framework with intelligent fallback mechanisms.
